@@ -1,14 +1,14 @@
 require("dotenv").config();
 
 const app = require("./src/app");
-const { sequelize, connectDatabase } = require("./src/config/database");
+const { sequelize, connectDB } = require("./src/config/database");
 
 require("./src/models");
 
 const PORT = process.env.PORT || 8000;
 
 const startServer = async () => {
-  await connectDatabase();
+  await connectDB();
 
   try {
     await require("./src/services/practiceMigration.service").preparePracticeSchema();
