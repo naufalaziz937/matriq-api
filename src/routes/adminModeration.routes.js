@@ -1,0 +1,11 @@
+const router = require('express').Router();
+const authMiddleware = require('../middlewares/auth.middleware');
+const allowRoles = require('../middlewares/role.middleware');
+const c = require('../controllers/adminModeration.controller');
+router.use(authMiddleware, allowRoles(1));
+router.get('/summary', c.getModerationSummary);
+router.get('/', c.getModerationQueue);
+router.get('/:id', c.getModerationDetail);
+router.put('/:id/approve', c.approveQuestion);
+router.put('/:id/reject', c.rejectQuestion);
+module.exports = router;

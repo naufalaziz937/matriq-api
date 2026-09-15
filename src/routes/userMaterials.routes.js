@@ -1,0 +1,12 @@
+const router = require('express').Router();
+const auth = require('../middlewares/auth.middleware');
+const allowRoles = require('../middlewares/role.middleware');
+const controller = require('../controllers/userMaterials.controller');
+router.use(auth, allowRoles(2));
+router.get('/', controller.overview);
+router.get('/:id/file', controller.file);
+router.get('/:id', controller.detail);
+router.post('/:id/start', controller.start);
+router.put('/:id/progress', controller.progress);
+router.put('/:id/complete', controller.complete);
+module.exports = router;

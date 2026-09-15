@@ -11,7 +11,12 @@ const startServer = async () => {
   await connectDatabase();
 
   try {
+    await require('./src/services/practiceMigration.service').preparePracticeSchema();
+    await require('./src/services/userTryoutRecap.service').prepareSchema();
     await sequelize.sync({ alter: true });
+    await require('./src/services/userAnalytics.service').ensureIndexes();
+    await require('./src/services/achievement.service').seedDefinitions();
+    await require('./src/services/settings.service').seedDefaults();
 
     console.log("✅ Database synchronized");
 

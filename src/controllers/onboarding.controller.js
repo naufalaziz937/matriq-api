@@ -375,4 +375,5 @@ const completeOnboarding = async (
 
 module.exports = {
   completeOnboarding,
+  uploadToCloudinary,
 };

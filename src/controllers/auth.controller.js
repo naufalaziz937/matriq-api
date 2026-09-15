@@ -1,5 +1,6 @@
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const {getSettingValue}=require('../services/settings.service');
 
 const {
   User,
@@ -12,6 +13,8 @@ const {
 
 const register = async (req, res) => {
   try {
+    if (await getSettingValue('maintenance_mode',false)) return res.status(503).json({success:false,code:'MAINTENANCE_MODE',message:await getSettingValue('maintenance_message','MatrIQ sedang dalam pemeliharaan.')});
+    if (!(await getSettingValue('registration_enabled',true))) return res.status(403).json({success:false,message:'Registrasi publik sedang dinonaktifkan.'});
     const {
       nama,
       email,
@@ -24,6 +27,8 @@ const register = async (req, res) => {
         message: "Nama, email, dan password wajib diisi",
       });
     }
+    const minimumLength=await getSettingValue('minimum_password_length',8);
+    if (String(password).length<minimumLength) return res.status(400).json({success:false,message:`Password minimal ${minimumLength} karakter`});
 
     const normalizedEmail = String(email)
       .trim()
@@ -51,7 +56,7 @@ const register = async (req, res) => {
       nama: String(nama).trim(),
       email: normalizedEmail,
       password: hashedPassword,
-      role: 2,
+      role: await getSettingValue('default_user_role',2),
       is_activate: false,
     });
 
@@ -138,7 +143,7 @@ const login = async (req, res) => {
       },
       process.env.JWT_SECRET,
       {
-        expiresIn: "7d",
+        expiresIn: `${await getSettingValue('session_expiry_days',7)}d`,
       },
     );
 
@@ -243,13 +248,11 @@ const resetPassword = async (req, res) => {
       });
     }
 
-    if (
-      String(password_baru).length <
-      8
-    ) {
+    const minimumLength=await getSettingValue('minimum_password_length',8);
+    if (String(password_baru).length < minimumLength) {
       return res.status(400).json({
         success: false,
-        message: "Password baru minimal 8 karakter",
+        message: `Password baru minimal ${minimumLength} karakter`,
       });
     }
 

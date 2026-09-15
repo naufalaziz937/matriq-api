@@ -1,0 +1,14 @@
+const router = require('express').Router();
+const auth = require('../middlewares/auth.middleware');
+const allowRoles = require('../middlewares/role.middleware');
+const controller = require('../controllers/userPractice.controller');
+router.use(auth, allowRoles(2));
+router.get('/', controller.overview);
+router.get('/subtests/:code/materials', controller.materials);
+router.get('/materials/:materialId/levels', controller.levels);
+router.post('/session', controller.start);
+router.get('/session/:sessionId', controller.session);
+router.post('/session/:sessionId/answer', controller.answer);
+router.put('/session/:sessionId/complete', controller.complete);
+router.get('/session/:sessionId/result', controller.result);
+module.exports = router;

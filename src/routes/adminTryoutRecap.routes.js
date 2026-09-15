@@ -1,0 +1,14 @@
+const router = require('express').Router();
+const authMiddleware = require('../middlewares/auth.middleware');
+const allowRoles = require('../middlewares/role.middleware');
+const controller = require('../controllers/adminTryoutRecap.controller');
+router.use(authMiddleware, allowRoles(1));
+router.get('/summary', controller.summary);
+router.get('/ranking', controller.ranking);
+router.get('/platforms', controller.platforms);
+router.get('/subtests', controller.subtests);
+router.get('/distribution', controller.distribution);
+router.get('/most-improved', controller.improved);
+router.get('/user/:userId', controller.user);
+router.get('/', controller.list);
+module.exports = router;

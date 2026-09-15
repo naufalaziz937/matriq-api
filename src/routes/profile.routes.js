@@ -1,0 +1,13 @@
+const router = require('express').Router();
+const auth = require('../middlewares/auth.middleware');
+const allowRoles = require('../middlewares/role.middleware');
+const upload = require('../middlewares/upload.middleware');
+const controller = require('../controllers/profile.controller');
+router.use(auth);
+router.get('/', controller.get);
+router.put('/', controller.updateCommon);
+router.put('/student', allowRoles(2), controller.updateStudent);
+router.put('/target', allowRoles(2), controller.updateTarget);
+router.put('/tutor', allowRoles(3), controller.updateTutor);
+router.put('/photo', (req, res, next) => upload.single('foto_profile')(req, res, error => error ? res.status(400).json({ success: false, message: error.message }) : next()), controller.photo);
+module.exports = router;

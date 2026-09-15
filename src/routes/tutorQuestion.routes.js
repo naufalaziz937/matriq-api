@@ -1,0 +1,13 @@
+const router=require('express').Router();
+const authMiddleware=require('../middlewares/auth.middleware');
+const allowRoles=require('../middlewares/role.middleware');
+const c=require('../controllers/tutorQuestion.controller');
+router.use(authMiddleware,allowRoles(3));
+router.get('/summary',c.summary);
+router.get('/',c.list);
+router.get('/:id',c.detail);
+router.post('/',c.create);
+router.put('/:id',c.update);
+router.put('/:id/submit',c.submit);
+router.delete('/:id',c.remove);
+module.exports=router;
