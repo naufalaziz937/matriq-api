@@ -1,5 +1,14 @@
 const { Sequelize } = require("sequelize");
 
+console.log("=== DATABASE CONFIG ===");
+console.log("NODE_ENV:", process.env.NODE_ENV);
+console.log("DB_HOST:", process.env.DB_HOST);
+console.log("DB_PORT:", process.env.DB_PORT);
+console.log("DB_NAME:", process.env.DB_NAME);
+console.log("DB_USER:", process.env.DB_USER);
+console.log("DB_PASSWORD_SET:", Boolean(process.env.DB_PASSWORD));
+console.log("=======================");
+
 const sequelize = new Sequelize(
   process.env.DB_NAME,
   process.env.DB_USER,
@@ -31,9 +40,12 @@ const connectDB = async () => {
     console.error("❌ Database connection failed");
     console.error("Name:", error?.name);
     console.error("Message:", error?.message);
-    console.error("Original:", error?.original?.message);
-    console.error("Parent:", error?.parent?.message);
-
+    console.error("Code:", error?.original?.code);
+    console.error("Errno:", error?.original?.errno);
+    console.error("Syscall:", error?.original?.syscall);
+    console.error("Address:", error?.original?.address);
+    console.error("Port:", error?.original?.port);
+    console.error("Original:", error?.original);
     process.exit(1);
   }
 };
