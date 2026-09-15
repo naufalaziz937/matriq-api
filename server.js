@@ -5,23 +5,22 @@ const { sequelize, connectDatabase } = require("./src/config/database");
 
 require("./src/models");
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 8000;
 
 const startServer = async () => {
   await connectDatabase();
 
   try {
-    await require('./src/services/practiceMigration.service').preparePracticeSchema();
-    await require('./src/services/userTryoutRecap.service').prepareSchema();
-    await sequelize.sync({ alter: true });
-    await require('./src/services/userAnalytics.service').ensureIndexes();
-    await require('./src/services/achievement.service').seedDefinitions();
-    await require('./src/services/settings.service').seedDefaults();
+    await require("./src/services/practiceMigration.service").preparePracticeSchema();
+    await require("./src/services/userTryoutRecap.service").prepareSchema();
+    await require("./src/services/userAnalytics.service").ensureIndexes();
+    await require("./src/services/achievement.service").seedDefinitions();
+    await require("./src/services/settings.service").seedDefaults();
 
     console.log("✅ Database synchronized");
 
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on http://localhost:${PORT}`);
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`MatrIQ API running on port ${PORT}`);
     });
   } catch (error) {
     console.error("❌ Failed to start server:", error);

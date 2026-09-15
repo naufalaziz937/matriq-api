@@ -1,5 +1,4 @@
 const { Sequelize } = require("sequelize");
-require("dotenv").config();
 
 const sequelize = new Sequelize(
   process.env.DB_NAME,
@@ -7,16 +6,27 @@ const sequelize = new Sequelize(
   process.env.DB_PASSWORD,
   {
     host: process.env.DB_HOST,
-    port: process.env.DB_PORT,
+    port: Number(process.env.DB_PORT || 5432),
     dialect: "postgres",
-    logging: false,
+
+    logging: process.env.NODE_ENV === "development" ? console.log : false,
+
+    dialectOptions:
+      process.env.NODE_ENV === "production"
+        ? {
+            ssl: {
+              require: true,
+              rejectUnauthorized: false,
+            },
+          }
+        : {},
   },
 );
 
-const connectDatabase = async () => {
+const connectDB = async () => {
   try {
     await sequelize.authenticate();
-    console.log("✅ PostgreSQL connected");
+    console.log("✅ Database connected successfully");
   } catch (error) {
     console.error("❌ Database connection failed:", error.message);
     process.exit(1);
@@ -25,5 +35,5 @@ const connectDatabase = async () => {
 
 module.exports = {
   sequelize,
-  connectDatabase,
+  connectDB,
 };
