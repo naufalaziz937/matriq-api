@@ -19,6 +19,8 @@ const register = async (req, res) => {
       nama,
       email,
       password,
+      no_hp,
+      gender,
     } = req.body;
 
     if (!nama || !email || !password) {
@@ -56,6 +58,8 @@ const register = async (req, res) => {
       nama: String(nama).trim(),
       email: normalizedEmail,
       password: hashedPassword,
+      no_hp: no_hp ? String(no_hp).trim() : null,
+      gender: gender && ["L", "P"].includes(gender) ? gender : null,
       role: await getSettingValue('default_user_role',2),
       is_activate: false,
     });
