@@ -2,10 +2,14 @@ const express = require('express');
 const authMiddleware = require('../middlewares/auth.middleware');
 const allowRoles = require('../middlewares/role.middleware');
 const controller = require('../controllers/adminQuestion.controller');
+const excelUpload = require('../middlewares/excelUpload.middleware');
 
 const router = express.Router();
 router.use(authMiddleware, allowRoles(1));
 router.get('/summary', controller.getSummary);
+router.get('/template', controller.downloadTemplate);
+router.post('/import/validate', excelUpload, controller.validateImport);
+router.post('/import', excelUpload, controller.importQuestions);
 router.get('/', controller.getQuestions);
 router.get('/:id', controller.getQuestionById);
 router.post('/', controller.createQuestion);

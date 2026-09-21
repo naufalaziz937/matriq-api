@@ -1,5 +1,8 @@
 const { Op } = require('sequelize');
+const XLSX = require('xlsx');
 const { Question, User, Material } = require('../models');
+const { sequelize } = require('../config/database');
+const notifications = require('../services/notification.service');
 
 const SUBTEST_ITEMS = require('../config/subtests');
 const SUBTESTS = new Set(SUBTEST_ITEMS.map(item => item.code));
@@ -182,4 +185,197 @@ async function deleteQuestion(req, res) {
   }
 }
 
-module.exports = { getQuestions, getSummary, getQuestionById, createQuestion, updateQuestion, deleteQuestion, validateQuestion, materialError };
+// ─── Template columns definition ──────────────────────────────────────────────
+const TEMPLATE_COLUMNS = [
+  { col: 'subtest',        header: 'subtest',        example: 'PU',                            note: 'Kode subtes: PU, PPU, PBM, PK, LBI, LBE, PM' },
+  { col: 'category',      header: 'category',       example: 'Penalaran Deduktif',            note: 'Kategori soal (maks 100 karakter)' },
+  { col: 'difficulty_level', header: 'difficulty_level', example: 2,                          note: '1=Fundamental, 2=Intermediate, 3=Advanced, 4=Mastery' },
+  { col: 'question',      header: 'question',       example: 'Jika A > B dan B > C, maka?',  note: 'Teks soal (min 5, maks 10000 karakter)' },
+  { col: 'option_a',      header: 'option_a',       example: 'A lebih besar dari C',          note: 'Pilihan jawaban A' },
+  { col: 'option_b',      header: 'option_b',       example: 'B lebih besar dari A',          note: 'Pilihan jawaban B' },
+  { col: 'option_c',      header: 'option_c',       example: 'C lebih besar dari A',          note: 'Pilihan jawaban C' },
+  { col: 'option_d',      header: 'option_d',       example: 'Tidak bisa ditentukan',         note: 'Pilihan jawaban D' },
+  { col: 'option_e',      header: 'option_e',       example: 'A sama dengan C',               note: 'Pilihan jawaban E' },
+  { col: 'correct_answer',header: 'correct_answer', example: 'A',                             note: 'Jawaban benar: A, B, C, D, atau E' },
+  { col: 'explanation',   header: 'explanation',    example: 'Karena A > B > C, maka A > C', note: 'Pembahasan jawaban (maks 10000 karakter)' },
+  { col: 'material_id',   header: 'material_id',    example: '',                              note: '(Opsional) ID materi aktif. Kosongkan jika tidak ada.' },
+  { col: 'status',        header: 'status',         example: 'draft',                         note: 'draft atau active (default: draft)' },
+];
+
+function downloadTemplate(req, res) {
+  try {
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1: Template soal
+    const headerRow = TEMPLATE_COLUMNS.map((c) => c.header);
+    const ws = XLSX.utils.aoa_to_sheet([headerRow]);
+
+    // Lebar kolom otomatis
+    ws['!cols'] = TEMPLATE_COLUMNS.map((c) =>
+      ({ wch: Math.max(c.header.length, String(c.example).length, c.note.length, 20) })
+    );
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Soal');
+
+    // Sheet 2: Referensi
+    const refWs = XLSX.utils.aoa_to_sheet([
+      ['Referensi Nilai Valid'],
+      [],
+      ['Field', 'Nilai Valid'],
+      ['subtest', 'PU, PPU, PBM, PK, LBI, LBE, PM'],
+      ['difficulty_level', '1 = Fundamental, 2 = Intermediate, 3 = Advanced, 4 = Mastery'],
+      ['correct_answer', 'A, B, C, D, atau E'],
+      ['status', 'draft, active'],
+      [],
+      ['Contoh:', 'PU | Penalaran Deduktif | 2 | Jika A > B dan B > C, maka? | ... | A | Karena A > B > C | (kosong) | draft'],
+      ['Catatan:', 'Baris 1 = nama kolom (JANGAN DIUBAH). Isi soal mulai baris 2. Status Tutor ditentukan otomatis oleh workflow moderasi.'],
+    ]);
+    refWs['!cols'] = [{ wch: 20 }, { wch: 60 }];
+    XLSX.utils.book_append_sheet(wb, refWs, 'Referensi');
+
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="template_import_soal.xlsx"');
+    res.send(buf);
+  } catch (error) {
+    console.error('DOWNLOAD TEMPLATE ERROR:', error);
+    return res.status(500).json(invalid('Gagal membuat template'));
+  }
+}
+
+const REQUIRED_IMPORT_HEADERS = TEMPLATE_COLUMNS
+  .map((column) => column.header)
+  .filter((header) => header !== 'material_id' && header !== 'status');
+
+function readImportRows(file) {
+  if (!file) return { error: 'File Excel tidak ditemukan' };
+  let workbook;
+  try {
+    workbook = XLSX.read(file.buffer, { type: 'buffer' });
+  } catch {
+    return { error: 'File tidak dapat dibaca. Pastikan format file adalah .xlsx' };
+  }
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) return { error: 'File Excel kosong atau tidak memiliki sheet' };
+  const sheet = workbook.Sheets[sheetName];
+  const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', blankrows: false });
+  if (!matrix.length) return { error: 'File Excel kosong atau tidak memiliki header' };
+  const headers = matrix[0].map((value) => String(value).trim().toLowerCase());
+  const missing = REQUIRED_IMPORT_HEADERS.filter((header) => !headers.includes(header));
+  if (missing.length) return { error: `Header Excel tidak lengkap: ${missing.join(', ')}` };
+  const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+  const normalizedRows = rows.map((row, index) => {
+    const normalized = {};
+    for (const key of Object.keys(row)) {
+      normalized[key.toString().trim().toLowerCase()] = row[key];
+    }
+    return { row: index + 2, data: normalized };
+  }).filter(({ data }) => Object.values(data).some((value) => String(value).trim() !== ''));
+  const MAX_ROWS = 500;
+  if (normalizedRows.length > MAX_ROWS) {
+    return { error: `Maksimal ${MAX_ROWS} soal per sekali import. File Anda berisi ${normalizedRows.length} baris.` };
+  }
+  if (!normalizedRows.length) return { error: 'Tidak ada data soal di file Excel' };
+  return { rows: normalizedRows };
+}
+
+async function prepareImport(req) {
+  const parsed = readImportRows(req.file);
+  if (parsed.error) return parsed;
+  const isTutor = Number(req.user.role) === 3;
+  const settings = require('../services/settings.service');
+  const defaultStatus = isTutor
+    ? (await settings.getSettingValue('tutor_submission_requires_review', true) ? 'review' : 'active')
+    : await settings.getSettingValue('admin_question_default_status', 'active');
+  const valid = [];
+  const errors = [];
+
+  for (const item of parsed.rows) {
+    const row = item.data;
+    const rowNum = item.row;
+    const rawStatus = String(row.status ?? '').trim().toLowerCase();
+    const difficultyLevel = Number(row['difficulty_level'] ?? row['difficulty level']);
+    const payload = {
+      subtest: String(row.subtest ?? '').trim().toUpperCase(),
+      category: String(row['category'] ?? '').trim(),
+      difficulty_level: difficultyLevel,
+      difficulty: difficultyLevel === 1 ? 'easy' : difficultyLevel === 2 ? 'medium' : 'hard',
+      question: String(row['question'] ?? '').trim(),
+      options: [
+        { key: 'A', text: String(row['option_a'] ?? row['option a'] ?? '').trim() },
+        { key: 'B', text: String(row['option_b'] ?? row['option b'] ?? '').trim() },
+        { key: 'C', text: String(row['option_c'] ?? row['option c'] ?? '').trim() },
+        { key: 'D', text: String(row['option_d'] ?? row['option d'] ?? '').trim() },
+        { key: 'E', text: String(row['option_e'] ?? row['option e'] ?? '').trim() },
+      ],
+      correct_answer: String(row['correct_answer'] ?? row['correct answer'] ?? '').trim().toUpperCase(),
+      explanation: String(row['explanation'] ?? '').trim(),
+      material_id: row['material_id'] != null && row['material_id'] !== '' ? Number(row['material_id']) : null,
+      status: isTutor ? defaultStatus : (rawStatus || defaultStatus),
+    };
+    const validation = validateQuestion(payload);
+    if (validation.error) {
+      errors.push({ row: rowNum, error: validation.error, data: { ...payload, question: payload.question.slice(0, 120) } });
+      continue;
+    }
+    if (!isTutor && !['draft', 'active'].includes(validation.value.status)) {
+      errors.push({ row: rowNum, error: 'Status Admin harus draft atau active', data: { ...payload, question: payload.question.slice(0, 120) } });
+      continue;
+    }
+    const materialIssue = await materialError(validation.value);
+    if (materialIssue) {
+      errors.push({ row: rowNum, error: materialIssue, data: { ...payload, question: payload.question.slice(0, 120) } });
+      continue;
+    }
+    valid.push({ row: rowNum, value: validation.value });
+  }
+  return { valid, errors, total: valid.length + errors.length, status: defaultStatus };
+}
+
+async function validateImport(req, res) {
+  try {
+    const prepared = await prepareImport(req);
+    if (prepared.error) return res.status(400).json(invalid(prepared.error));
+    const rows = [
+      ...prepared.valid.map((item) => ({ row: item.row, status: 'valid', data: item.value })),
+      ...prepared.errors.map((item) => ({ ...item, status: 'error' })),
+    ].sort((a, b) => a.row - b.row);
+    return res.json({ success: true, data: { total: prepared.total, valid: prepared.valid.length, invalid: prepared.errors.length, rows } });
+  } catch (error) {
+    console.error('VALIDATE QUESTION IMPORT ERROR:', error);
+    return res.status(500).json(invalid('Gagal memvalidasi file soal'));
+  }
+}
+
+async function importQuestions(req, res) {
+  try {
+    const prepared = await prepareImport(req);
+    if (prepared.error) return res.status(400).json(invalid(prepared.error));
+    if (prepared.errors.length) {
+      return res.status(422).json({ success: false, message: `${prepared.errors.length} baris masih tidak valid. Tidak ada soal yang diimpor.`, data: { success: [], errors: prepared.errors } });
+    }
+    const now = new Date();
+    const values = prepared.valid.map((item) => ({
+      ...item.value,
+      created_by_id: req.user.user_id,
+      submitted_at: Number(req.user.role) === 3 && item.value.status !== 'draft' ? now : null,
+      reviewed_by_id: null,
+      reviewed_at: null,
+      rejection_reason: null,
+    }));
+    await sequelize.transaction(async (transaction) => {
+      await Question.bulkCreate(values, { transaction, validate: true });
+    });
+    if (Number(req.user.role) === 3 && prepared.status === 'review') {
+      await notifications.adminsAfterEvent({ type: 'new_question_review', title: 'Import Soal Menunggu Review', message: `${values.length} soal baru dari Tutor menunggu review.`, actionUrl: '/moderation' });
+    }
+    const success = prepared.valid.map((item) => ({ row: item.row, question: item.value.question.slice(0, 80) }));
+    return res.status(201).json({ success: true, message: 'Import berhasil', data: { processed: values.length, success, errors: [] } });
+  } catch (error) {
+    console.error('IMPORT QUESTIONS ERROR:', error);
+    return res.status(500).json(invalid('Import gagal. Tidak ada soal yang disimpan.'));
+  }
+}
+
+module.exports = { getQuestions, getSummary, getQuestionById, createQuestion, updateQuestion, deleteQuestion, validateQuestion, materialError, downloadTemplate, validateImport, importQuestions };
